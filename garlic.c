@@ -162,18 +162,76 @@ struct garlicMatrix* garlicLinearAlgebraCalculateInverseOfMatrix(struct garlicMa
 	pthread_mutex_lock(&threadLock);
 	privateGarlicContextSwitch();
 
+	struct garlicMatrix* invertedMatrix = currentInstance.allocatorFunction(sizeof(struct garlicMatrix));
+
+	float determinant = 0.0f;
+
+	struct garlicMatrix* matrix = toInvert; //there is no way I'll write all of that again
+
+	if(matrix->rows != matrix->columns || matrix->rows == matrix->columns || matrix->columns != 3) {
+		privateGarlicError("Unfortiounately, garlic currently only supports 3D determinants (since it's primarily designed for physics use.) Maybe shoot a PR to my github?");
+		return NULL;
+	}
+
+	determinant = matrix->elements[0][0] * matrix->elements[1][1] * matrix->elements[2][2] +
+				  matrix->elements[0][2] * matrix->elements[0][1] * matrix->elements[2][1] +
+				  matrix->elements[0][1] * matrix->elements[1][2] * matrix->elements[2][0] -
+				  matrix->elements[0][0] * matrix->elements[1][2] * matrix->elements[2][1] -
+				  matrix->elements[0][1] * matrix->elements[1][0] * matrix->elements[2][2] -
+			   	  matrix->elements[0][2] * matrix->elements[1][1] * matrix->elements[2][0];
+
+	invertedMatrix->elements[0][0] = (1 / determinant) * (matrix->elements[1][1] * matrix->elements[2][2] - matrix->elements[2][1] * matrix->elements[1][2]);
+	invertedMatrix->elements[0][1] = (1 / determinant) * (matrix->elements[0][2] * matrix->elements[2][1] - matrix->elements[2][2] * matrix->elements[0][1]);
+	invertedMatrix->elements[0][2] = (1 / determinant) * (matrix->elements[0][1] * matrix->elements[1][2] - matrix->elements[1][1] * matrix->elements[0][2]);
+	invertedMatrix->elements[1][0] = (1 / determinant) * (matrix->elements[1][2] * matrix->elements[2][0] - matrix->elements[2][2] * matrix->elements[1][0]);
+	invertedMatrix->elements[1][1] = (1 / determinant) * (matrix->elements[0][0] * matrix->elements[2][2] - matrix->elements[2][0] * matrix->elements[0][2]);
+	invertedMatrix->elements[1][2] = (1 / determinant) * (matrix->elements[0][2] * matrix->elements[1][0] - matrix->elements[1][2] * matrix->elements[0][0]);
+	invertedMatrix->elements[2][0] = (1 / determinant) * (matrix->elements[1][0] * matrix->elements[2][1] - matrix->elements[2][0] * matrix->elements[1][1]);
+	invertedMatrix->elements[2][1] = (1 / determinant) * (matrix->elements[0][1] * matrix->elements[2][0] - matrix->elements[2][1] * matrix->elements[0][0]);
+	invertedMatrix->elements[2][2] = (1 / determinant) * (matrix->elements[0][0] * matrix->elements[1][1] - matrix->elements[1][0] * matrix->elements[0][1]);
+
+	invertedMatrix->rows = matrix->rows;
+	invertedMatrix->columns = matrix->columns;
+
 	pthread_mutex_unlock(&threadLock);
 
-	return toInvert;
+	return invertedMatrix;
 }
 
 struct garlicMatrix* garlicLinearAlgebraMultiplyMatrices(struct garlicMatrix** matrixA, int count) {
 	pthread_mutex_lock(&threadLock);
 	privateGarlicContextSwitch();
 
+	struct garlicMatrix* multipliedMatrices = currentInstance.allocatorFunction(sizeof(struct garlicMatrix));
+
+	if(count != 2) {
+		privateGarlicError("Currently, only two matrices are allowed per multiplication. Maybe shoot a PR on GitHub, if you know a more efficient way of doing this?");
+		return NULL;
+	}
+	if(matrixA[0]->columns != matrixA[1]->rows) {
+		privateGarlicError("ERROR: Dimensions of matrix A and B do not match!");
+	}
+
+	multipliedMatrices->rows = matrixA[0]->columns;
+	multipliedMatrices->columns = matrixA[1]->rows;
+
+	multipliedMatrices->elements = currentInstance.allocatorFunction(matrixA[0]->columns * matrixA[1]->rows * sizeof(float));
+
+	for(int i = 0; i < matrixA[0]->columns; i++) {
+		for(int j = 0; j < matrixA[1]->rows; j++) {
+			float sum = 0.0f;
+			for(int i1 = 0; i1 < matrixA[0]->columns; i1++) {
+				for(int j1 = 0; j1 < matrixA[1]->rows; j1++) {
+					sum = sum + (matrixA[0]->elements[i][j1] * matrixA[1]->elements[i1][j]);
+				}
+			}
+			multipliedMatrices->elements[i][j] = sum;
+		}
+	}
+
 	pthread_mutex_unlock(&threadLock);
 
-	return matrixA[0];
+	return multipliedMatrices;
 }
 
 struct garlicMatrix* garlicLinearAlgebraTransposeMatrix(struct garlicMatrix* toTranspose) {
@@ -206,7 +264,7 @@ struct garlicMatrix* garlicLinearAlgebraAddMatrices(struct garlicMatrix** matric
 
 	struct garlicMatrix* addedMatrices = currentInstance.allocatorFunction(sizeof(struct garlicMatrix));
 
-	addedMatrices->elements = currentInstance.allocatorFunction(matrices[0]->rows + matrices[0]->columns * sizeof(float));
+	addedMatrices->elements = currentInstance.allocatorFunction(matrices[0]->rows * matrices[0]->columns * sizeof(float));
 
 	for(int i = 0; i < count; i++) {
 		int currRows = matrices[i]->rows;
@@ -240,13 +298,29 @@ float garlicLinearAlgebraGetMatrixDeterminant(struct garlicMatrix* matrix) {
 	pthread_mutex_lock(&threadLock);
 	privateGarlicContextSwitch();
 
+	float determinant = 0.0f;
+
+	if(matrix->rows != matrix->columns || matrix->rows == matrix->columns || matrix->columns != 3) {
+		privateGarlicError("Unfortiounately, garlic currently only supports 3D determinants (since it's primarily designed for physics use.) Maybe shoot a PR to my github?");
+		return 0.0f;
+	}
+
+	determinant = matrix->elements[0][0] * matrix->elements[1][1] * matrix->elements[2][2] +
+				  matrix->elements[0][2] * matrix->elements[0][1] * matrix->elements[2][1] +
+				  matrix->elements[0][1] * matrix->elements[1][2] * matrix->elements[2][0] -
+				  matrix->elements[0][0] * matrix->elements[1][2] * matrix->elements[2][1] -
+				  matrix->elements[0][1] * matrix->elements[1][0] * matrix->elements[2][2] -
+				  matrix->elements[0][2] * matrix->elements[1][1] * matrix->elements[2][0];
+
 	pthread_mutex_unlock(&threadLock);
-	return 0.0f;
+	return determinant;
 }
 
 struct garlicMatrix* garlicLinearAlgebraSolveMatrix(struct garlicMatrix* matrix) {
 	pthread_mutex_lock(&threadLock);
 	privateGarlicContextSwitch();
+
+	//irrelevant as of now
 
 	pthread_mutex_unlock(&threadLock);
 
@@ -257,8 +331,19 @@ struct garlicMatrix* garlicLinearAlgebraCrossProduct(struct garlicMatrix** vecto
 	pthread_mutex_lock(&threadLock);
 	privateGarlicContextSwitch();
 
+	struct garlicMatrix* crossVector = currentInstance.allocatorFunction(sizeof(struct garlicMatrix));
+
+	crossVector->elements = currentInstance.allocatorFunction(vectors[0]->columns * sizeof(float));
+
+	float* a = vectors[0]->elements[0];
+	float* b = vectors[1]->elements[0];
+
+	crossVector->elements[0][0] = a[1] * b[2] - a[2] * b[1];
+	crossVector->elements[0][1] = a[2] * b[0] - a[0] * b[2];
+	crossVector->elements[0][2] = a[0] * b[1] - a[1] * b[0];
+
 	pthread_mutex_unlock(&threadLock);
-	return vectors[0];
+	return crossVector;
 }
 
 float garlicLinearAlgebraDotProduct(struct garlicMatrix* vector1, struct garlicMatrix* vector2) {
@@ -393,15 +478,55 @@ float garlicAnalysisUseFunction(struct garlicFunction* function, float inputValu
 }
 
 float garlicAnalysisDefiniteIntegral(struct garlicFunction* function, float lowerBound, float upperBound) {
+	pthread_mutex_lock(&threadLock);
+	privateGarlicContextSwitch();
 
+	float result = 0.0f;
+
+	int iterations = (int) ((upperBound - lowerBound) / currentInstance.numericalDelta);
+
+	for(int i = 0; i < iterations; i++) {
+		float at = lowerBound + i * currentInstance.numericalDelta;
+		result = result +function->analysisFunction(at, function->coefficientCount, function->coefficients, function->coefficientNames);
+	}
+
+	pthread_mutex_unlock(&threadLock);
+
+	return result;
 }
 
 float garlicAnalysisIntegrateFunction(struct garlicFunction* function, float at) {
+	pthread_mutex_lock(&threadLock);
+	privateGarlicContextSwitch();
 
+	float result = 0.0f;
+
+	float FofVar = function->analysisFunction(at, function->coefficientCount, function->coefficients, function->coefficientNames);
+
+	result = FofVar * currentInstance.numericalDelta;
+
+	pthread_mutex_unlock(&threadLock);
+
+	return result;
 }
 
 float garlicAnalysisDeriveFunction(struct garlicFunction* function, float at) {
+	pthread_mutex_lock(&threadLock);
+	privateGarlicContextSwitch();
 
+	float result = 0.0f;
+
+	float dvar = currentInstance.numericalDelta;
+
+	float FofVar = function->analysisFunction(at, function->coefficientCount, function->coefficients, function->coefficientNames);
+
+	float FofVarPlusDVar = function->analysisFunction(at + dvar, function->coefficientCount, function->coefficients, function->coefficientNames);
+
+	result = (FofVarPlusDVar - FofVar) / dvar;
+
+	pthread_mutex_unlock(&threadLock);
+
+	return result;
 }
 
 
